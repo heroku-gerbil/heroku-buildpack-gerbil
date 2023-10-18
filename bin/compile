@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# -*- coding: utf-8; mode: Shell-script; fill-column: 76; tab-width: 4; -*-
+# Brief: Used to perform the transformation steps on the app.
+#       bin/compile BUILD_DIR CACHE_DIR ENV_DIR
+
+set -o errexit
+
+BUILD_DIR="$1"
+CACHE_DIR="$2"
+ENV_DIR="$3"
+SHELL_DIR="$(dirname $0)"
+
+VIRTUAL_ROOT="${CACHE_DIR}/root"
+
+ENV_FILE="${BUILD_DIR}/build.env"
+if [ -f "${ENV_FILE}" ]; then
+    source "${ENV_FILE}"
+fi
+
+gerbil_version="${GERBIL_VERSION:-v0.18}"
+gerbil_repo=https://github.com/mighty-gerbils/gerbil
+
+function log_title () { echo "-----> $*"; }
+function log_content () { echo "       $*"; }
+function log_footer () { log_content "[DONE]"; }
+function log_format () { sed -u 's/^/       /'; }
+
+function print_environment () {
+    log_title "Print environment variables ..."
+    log_content "   GERBIL_VERSION = ${GERBIL_VERSION}"
+    log_content "        BUILD_DIR = ${BUILD_DIR}"
+    log_content "        CACHE_DIR = ${CACHE_DIR}"
+    log_content "          ENV_DIR = ${ENV_DIR}"
+    log_content "        SHELL_DIR = ${SHELL_DIR}"
+    log_content "     VIRTUAL_ROOT = ${VIRTUAL_ROOT}"
+    log_content "             HOME = ${HOME}"
+    log_content "              PWD = ${PWD}"
+    log_content "           TMPDIR = ${TMPDIR}"
+    log_footer
+}
+
+function install_gerbil () {
+    log_title "Installing Gerbil ..."
+    local current_dir="$(pwd)"
+    mkdir -pv ${CACHE_DIR} | log_format
+    cd ${CACHE_DIR}
+    log_content "Cloning ${gerbil_repo} ..."
+    git clone ${gerbil_repo} gerbil 2>&1 | log_format
+    cd gerbil
+
+    unset GERBIL_HOME
+
+    ./configure \
+      --prefix="${BUILD_DIR}/gerbil" \
+      --enable-shared \
+      --disable-deprecated \
+      --enable-zlib \
+      --enable-sqlite |& log_format
+
+    ./build.sh |& log_format
+
+    ./install.sh |& log_format
+
+    cd "${current_dir}"
+    log_footer
+}
+
+function compile_sources () {
+    log_title "Compiling sources ..."
+    local current_dir="$(pwd)"
+    cd ${CACHE_DIR}
+
+    export GERBIL_PATH="${BUILD_DIR}/gerbil"
+    export PATH=${GERBIL_PATH}/bin:$PATH
+
+    gxpkg deps --install |& log_format
+    gxpkg build |& log_format
+
+    ( ./build.ss heroku || : ) |& log_format
+
+    cd "${current_dir}"
+    log_footer
+}
+
+print_environment
+install_gerbil
+compile_sources

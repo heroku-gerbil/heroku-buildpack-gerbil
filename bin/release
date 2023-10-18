@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# -*- coding: utf-8; mode: Shell-script; fill-column: 76; tab-width: 4; -*-
+# Brief: Provides metadata back to the runtime.
+#       bin/release BUILD_DIR
+
+BUILD_DIR="$1"
+
+cat << EOF
+---
+config_vars:
+    PATH: ${BUILD_DIR}/gerbil/bin:${BUILD_DIR}//usr/bin:/bin
+    GERBIL_PATH=${BUILD_DIR}/gerbil
+EOF

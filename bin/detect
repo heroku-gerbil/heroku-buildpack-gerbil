@@ -1,0 +1,11 @@
+#!/bin/sh
+
+BUILD_DIR="$1"
+
+if [ -f "$BUILD_DIR/gerbil.pkg" ]; then
+  echo "Gerbil" && exit 0
+else
+  echo "Failed to locate ‘gerbil.pkg’ file."
+fi
+
+exit 1
