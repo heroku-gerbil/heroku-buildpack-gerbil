@@ -3,27 +3,35 @@
 # Brief: Used to perform the transformation steps on the app.
 #       bin/compile BUILD_DIR CACHE_DIR ENV_DIR
 
+# TODO cache gerbil and the dependencies
+# TODO only install the subset of gerbil necessary to run a binary
+# TODO get the whole thing to work end-to-end
+
 set -o errexit
+set -o pipefail
+set -x
 
 BUILD_DIR="$1"
 CACHE_DIR="$2"
 ENV_DIR="$3"
 SHELL_DIR="$(dirname $0)"
-
-VIRTUAL_ROOT="${CACHE_DIR}/root"
+PACK_DIR="$PWD"
 
 ENV_FILE="${BUILD_DIR}/build.env"
 if [ -f "${ENV_FILE}" ]; then
     source "${ENV_FILE}"
 fi
 
-gerbil_version="${GERBIL_VERSION:-v0.18}"
-gerbil_repo=https://github.com/mighty-gerbils/gerbil
-
 function log_title () { echo "-----> $*"; }
 function log_content () { echo "       $*"; }
+function abort () { log_content "[ERROR] $*"; exit 1; }
 function log_footer () { log_content "[DONE]"; }
 function log_format () { sed -u 's/^/       /'; }
+
+: "${GERBIL_VERSION:=v0.18}" "${USER:=heroku-gerbil}" "${TMPDIR:=$PWD/tmp}"
+export USER TMPDIR
+mkdir -pv "${CACHE_DIR}" "${TMPDIR}" |& log_format
+gerbil_repo=https://github.com/mighty-gerbils/gerbil
 
 function print_environment () {
     log_title "Print environment variables ..."
@@ -32,56 +40,155 @@ function print_environment () {
     log_content "        CACHE_DIR = ${CACHE_DIR}"
     log_content "          ENV_DIR = ${ENV_DIR}"
     log_content "        SHELL_DIR = ${SHELL_DIR}"
-    log_content "     VIRTUAL_ROOT = ${VIRTUAL_ROOT}"
+    log_content "         PACK_DIR = ${PACK_DIR}"
+    log_content "             PATH = ${PATH}"
+    log_content "  LD_LIBRARY_PATH = ${LD_LIBRARY_PATH}"
     log_content "             HOME = ${HOME}"
+    log_content "             USER = ${USER}"
     log_content "              PWD = ${PWD}"
     log_content "           TMPDIR = ${TMPDIR}"
+    log_content "         \$(id -a) = $(id -a)"
+    log_content "Contents of PWD:"
+    ls -la ${PWD} |& log_format
+    log_content "Contents of BUILD_DIR:"
+    ls -la ${BUILD_DIR} |& log_format
+    log_content "Contents of CACHE_DIR:"
+    ls -la ${CACHE_DIR} |& log_format
+    log_content "Contents of TMPDIR:"
+    ls -la ${TMPDIR} |& log_format
     log_footer
 }
+
+function get_deb_stuff () {
+    url="$1"
+    file="$(basename "$1")"
+    checksum="$2"
+    shift 2
+    wget --progress=dot:mega "${url}" |& log_format
+    if [ "$(sha256sum - < "${file}")" != "${checksum}  -" ]; then
+        abort "checksum failed for $url"
+    fi
+    ar x "${file}" data.tar.xz
+    tar xf data.tar.xz "$@"
+    rm -f "${file}" data.tar.xz
+}
+
+function install_sqlite () {
+    log_title "Installing SQLite ..."
+    cd ${TMPDIR}
+    get_deb_stuff \
+        http://http.us.debian.org/debian/pool/main/s/sqlite3/libsqlite3-0_3.43.2-1_amd64.deb \
+        fb0bf42c347e72bae3a6c7b5856f21f761e5e23431478055616b6bcfe2ff06bf \
+        ./usr/lib
+    get_deb_stuff \
+        http://http.us.debian.org/debian/pool/main/s/sqlite3/libsqlite3-dev_3.43.2-1_amd64.deb \
+        b56fe6b430e2c23267d28406400c62e16f0fb911e5204b4785eba87fd0df201e \
+        ./usr/lib ./usr/include
+    mkdir -p ${BUILD_DIR}/lib/
+    mv ./usr/lib/x86_64-linux-gnu/* ${BUILD_DIR}/lib/
+    mv ./usr/include ${BUILD_DIR}/include
+    log_footer
+}
+
+function install_gerbil_from_release () {
+    install_sqlite
+    log_title "Installing Gerbil ${GERBIL_VERSION} ..."
+
+    # Install Gerbil into ${BUILD_DIR}
+    wget --progress=dot:giga \
+         ${gerbil_repo}/releases/download/${GERBIL_VERSION}/gerbil-${GERBIL_VERSION}.tgz
+    tar zxf gerbil-${GERBIL_VERSION}.tgz
+    mv opt/gerbil ${BUILD_DIR}/
+    rm -rf opt
+
+    # Patch Gerbil
+    (cd ${BUILD_DIR}/gerbil/v0.18/lib
+      mv init.ss init.ss.bak
+      (echo "(displayln \"foo 500\")"
+       echo "(import (only-in :gerbil/runtime gerbil-greeting))"
+       cat init.ss.bak) > init.ss)
+    (cd ${BUILD_DIR}/gerbil/v0.18/src/gerbil
+      mv gxc-main.ss gxc-main.ss.bak
+      (echo "(displayln \"foo 600\")"
+       echo "(import :gerbil/runtime)"
+       cat gxc-main.ss.bak) > gxc-main.ss)
+
+    # Move the sqlite stuff to where gerbil will find it
+    mv ${BUILD_DIR}/lib/* ${BUILD_DIR}/gerbil/lib/
+    mv ${BUILD_DIR}/include/* ${BUILD_DIR}/gerbil/include/
+
+    # Update the cache
+    rsync -a ${BUILD_DIR}/gerbil/ ${CACHE_DIR}/gerbil/
+
+    # Mark Gerbil as installed in the cache
+    mkdir -p ${CACHE_DIR}/installed
+    echo ${GERBIL_VERSION} > $installed_gerbil
+}
+
 
 function install_gerbil () {
-    log_title "Installing Gerbil ..."
-    local current_dir="$(pwd)"
-    mkdir -pv ${CACHE_DIR} | log_format
-    cd ${CACHE_DIR}
-    log_content "Cloning ${gerbil_repo} ..."
-    git clone ${gerbil_repo} gerbil 2>&1 | log_format
-    cd gerbil
-
-    unset GERBIL_HOME
-
-    ./configure \
-      --prefix="${BUILD_DIR}/gerbil" \
-      --enable-shared \
-      --disable-deprecated \
-      --enable-zlib \
-      --enable-sqlite |& log_format
-
-    ./build.sh |& log_format
-
-    ./install.sh |& log_format
-
-    cd "${current_dir}"
+    installed_gerbil=${CACHE_DIR}/installed/gerbil
+    installed_version="$(cat $installed_gerbil 2> /dev/null || :)"
+    echo installed_gerbil=${installed_gerbil} installed_version=${installed_version} GERBIL_VERSION=${GERBIL_VERSION}
+    if [ "${installed_version}" = "${GERBIL_VERSION}" ] ; then
+        log_title "Copying pre-installed Gerbil ${GERBIL_VERSION} ..."
+        rsync -a ${CACHE_DIR}/gerbil/ ${BUILD_DIR}/gerbil/
+    else
+        rm -rf ${CACHE_DIR}/gerbil
+        cd ${TMPDIR}
+        case "${MACHTYPE}" in
+            x86_64-pc-linux-gnu)
+                install_gerbil_from_release
+                ;;
+            *)
+                abort "Unsupported machine type ${MACHTYPE}"
+                ;;
+        esac
+    fi
     log_footer
 }
 
-function compile_sources () {
+function configure_build () {
     log_title "Compiling sources ..."
-    local current_dir="$(pwd)"
-    cd ${CACHE_DIR}
+    export GERBIL_HOME="${BUILD_DIR}/gerbil"
+    export GERBIL_PATH="${BUILD_DIR}/.gerbil"
+    export PATH="${GERBIL_PATH}/bin:${GERBIL_HOME}/bin:${PATH}"
+    export LD_LIBRARY_PATH="${GERBIL_HOME}/lib:${LD_LIBRARY_PATH}"
+    export GERBIL_GSC="${GERBIL_HOME}/bin/gsc"
+    export GAMBOPT="~~=${GERBIL_HOME}"
+    export GERBIL_LOADPATH="${GERBIL_PATH}/lib:${GERBIL_HOME}/lib"
+    #ls -la ${BUILD_DIR} |& log_format
+    #ls -la ${GERBIL_HOME} |& log_format
+    #ls -la ${GERBIL_HOME}/bin |& log_format
+    #ls -la ${GERBIL_HOME}/lib |& log_format
+    log_footer
+}
 
-    export GERBIL_PATH="${BUILD_DIR}/gerbil"
-    export PATH=${GERBIL_PATH}/bin:$PATH
-
+# TODO: cache dependencies, etc.?
+function build_dependencies () {
+    log_title "Building dependencies ..."
+    cd ${BUILD_DIR}
     gxpkg deps --install |& log_format
+    gxpkg deps --update |& log_format
+    rsync -a ${BUILD_DIR}/gerbil/ ${CACHE_DIR}/gerbil/
+    rsync -a ${BUILD_DIR}/.gerbil/ ${CACHE_DIR}/.gerbil/
+    log_footer
+}
+
+function build_application () {
+    log_title "Building application ..."
+    cd ${BUILD_DIR}
+    echo '(gerbil-system-version-string)' | gxi |& log_format
     gxpkg build |& log_format
-
-    ( ./build.ss heroku || : ) |& log_format
-
-    cd "${current_dir}"
+    #./build.ss |& log_format
+    rsync -a ${BUILD_DIR}/gerbil/ ${CACHE_DIR}/gerbil/
+    rsync -a ${BUILD_DIR}/.gerbil/ ${CACHE_DIR}/.gerbil/
     log_footer
 }
 
 print_environment
 install_gerbil
-compile_sources
+configure_build
+build_dependencies
+build_application
+update_cache
