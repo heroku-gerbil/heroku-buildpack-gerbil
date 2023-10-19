@@ -1,5 +1,7 @@
 # Heroku Buildpack for Gerbil Scheme
 
+You can now deploy Heroku applications written in [Gerbil Scheme](https://cons.io)
+
 Use this buildpack with:
 ```shell
 heroku create myapp --buildpack fare/gerbil
