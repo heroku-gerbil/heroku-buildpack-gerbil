@@ -5,9 +5,9 @@
 
 BUILD_DIR="$1"
 
-cat << EOF
----
-config_vars:
-    PATH: ${BUILD_DIR}/gerbil/bin:${BUILD_DIR}//usr/bin:/bin
-    GERBIL_PATH=${BUILD_DIR}/gerbil
-EOF
+#cat << EOF
+#---
+#config_vars:
+#    PATH: ${BUILD_DIR}/.gerbil/bin:/usr/local/bin:usr/bin:/bin
+#    GERBIL_PATH=${BUILD_DIR}/.gerbil
+#EOF
