@@ -11,5 +11,10 @@ See the [Heroku Example server in Gerbil Scheme](https://github.com/heroku-gerbi
 
 ## Note for the maintainer
 
-After updating the code, I can publish it at < https://addons-next.heroku.com/buildpacks/ca13e561-bcff-4482-b78f-7a7ebc1adf37/publish >
-(Initially from `heroku buildpacks:register`, see < https://devcenter.heroku.com/articles/buildpack-registry >.)
+After updating the code, I can publish it at
+< https://addons-next.heroku.com/buildpacks/ca13e561-bcff-4482-b78f-7a7ebc1adf37/publish >
+(Initially from `heroku buildpacks:register`,
+see < https://devcenter.heroku.com/articles/buildpack-registry >
+and < https://devcenter.heroku.com/articles/buildpacks >.)
+
+TODO: Next time, make our own Debian- or Ubuntu- based package that already includes sqlite?
