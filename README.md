@@ -8,3 +8,8 @@ heroku create myapp --buildpack fare/gerbil
 ```
 
 See the [Heroku Example server in Gerbil Scheme](https://github.com/heroku-gerbil/heroku-example-gerbil)
+
+## Note for the maintainer
+
+After updating the code, I can publish it at < https://addons-next.heroku.com/buildpacks/ca13e561-bcff-4482-b78f-7a7ebc1adf37/publish >
+(Initially from `heroku buildpacks:register`, see < https://devcenter.heroku.com/articles/buildpack-registry >.)
