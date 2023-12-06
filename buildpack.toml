@@ -1,14 +1,14 @@
 api = "0.2"
 
 [buildpack]
-id = "fare/gerbil"
+id = "heroku-gerbil/gerbil"
 name = "Gerbil"
-version = "0.2"
+version = "0.3"
 homepage = "https://github.com/heroku-gerbil/heroku-buildpack-gerbil"
-gerbil_version = "v0.18"
+gerbil_version = "v0.18.1"
 
 [[publish.Vendor]]
-url = "https://github.com/heroku-gerbil/heroku-buildpack-gerbil/archive/refs/tags/v0.2.tar.gz"
+url = "https://github.com/heroku-gerbil/heroku-buildpack-gerbil/archive/refs/tags/v0.3.tar.gz"
 dir = "vendor/ruby/heroku-22"
 
 [publish.Ignore]
