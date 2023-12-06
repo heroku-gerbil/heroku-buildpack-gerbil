@@ -27,10 +27,8 @@ function abort () { log_content "[ERROR] $*"; exit 1; }
 function log_footer () { log_content "[DONE]"; }
 function log_format () { sed -u 's/^/       /'; }
 
-: "${GERBIL_VERSION:=v0.18}" "${USER:=heroku-gerbil}" "${TMPDIR:=$PWD/tmp}"
-#export GERBIL_HOME="${BUILD_DIR}/.gerbil"
+: "${GERBIL_VERSION:=v0.18.1}" "${USER:=heroku-gerbil}" "${TMPDIR:=$PWD/tmp}"
 export GERBIL_PATH="${BUILD_DIR}/.gerbil"
-#export PATH="${GERBIL_PATH}/bin:${GERBIL_HOME}/bin:${PATH}"
 export PATH="${GERBIL_PATH}/bin:${PATH}"
 export LD_LIBRARY_PATH="${GERBIL_PATH}/lib:${LD_LIBRARY_PATH}"
 export GERBIL_GSC="${GERBIL_PATH}/bin/gsc"
@@ -73,51 +71,19 @@ function print_environment () {
     #log_footer
 }
 
-function get_deb_stuff () {
-    url="$1"
-    file="$(basename "$1")"
-    checksum="$2"
-    shift 2
-    wget --progress=dot:mega "${url}" |& log_format
-    if [ "$(sha256sum - < "${file}")" != "${checksum}  -" ]; then
-        abort "checksum failed for $url"
-    fi
-    ar x "${file}" data.tar.xz
-    tar xf data.tar.xz "$@"
-    rm -f "${file}" data.tar.xz
-}
-
-function install_sqlite () {
-    log_title "Installing SQLite ..."
-    cd ${TMPDIR}
-    get_deb_stuff \
-        http://security.debian.org/debian-security/pool/updates/main/s/sqlite3/libsqlite3-0_3.27.2-3+deb10u2_amd64.deb \
-        ab731943405b570cc9020d6e448f2e81d852f7380a447e46801f1ae5571de8d1 \
-        ./usr/lib
-    get_deb_stuff \
-        http://security.debian.org/debian-security/pool/updates/main/s/sqlite3/libsqlite3-dev_3.27.2-3+deb10u2_amd64.deb \
-        548c17aebd437f081019b62324720da5debff27a282c26ada73d9b108b5f652a \
-        ./usr/lib ./usr/include
-    mkdir -p ${BUILD_DIR}/lib/
-    mv ./usr/lib/x86_64-linux-gnu/* ${BUILD_DIR}/lib/
-    mv ./usr/include ${BUILD_DIR}/include
-    log_footer
-}
-
 function install_gerbil_from_release () {
-    install_sqlite
     log_title "Installing Gerbil ${GERBIL_VERSION} ..."
 
+    url=${gerbil_repo}/releases/download/${GERBIL_VERSION}
+    base=gerbil-${GERBIL_VERSION}-linux-x86-64
     # Install Gerbil into ${BUILD_DIR}
-    wget --progress=dot:giga \
-         ${gerbil_repo}/releases/download/${GERBIL_VERSION}/gerbil-${GERBIL_VERSION}.tgz
-    tar zxf gerbil-${GERBIL_VERSION}.tgz
+    wget --progress=dot:giga $url/${base}.tar.gz
+    tar zxf ${base}.tar.gz
+    # Install sqlite and any other missing dependency
+    wget --progress=dot:giga $url/${base}-heroku-extras.tar.gz
+    tar zxf ${base}-heroku-extras.tar.gz
     mv opt/gerbil ${BUILD_DIR}/.gerbil
-    rm -rf opt
-
-    # Move the sqlite stuff to where gerbil will find it
-    mv ${BUILD_DIR}/lib/* ${BUILD_DIR}/.gerbil/lib/
-    mv ${BUILD_DIR}/include/* ${BUILD_DIR}/.gerbil/include/
+    rm -rf *.tar.gz opt
 
     # Update the cache
     rsync -a ${BUILD_DIR}/.gerbil/ ${CACHE_DIR}/.gerbil/
@@ -126,7 +92,6 @@ function install_gerbil_from_release () {
     mkdir -p ${CACHE_DIR}/installed
     echo ${GERBIL_VERSION} > $installed_gerbil
 }
-
 
 function install_gerbil () {
     installed_gerbil=${CACHE_DIR}/installed/gerbil
